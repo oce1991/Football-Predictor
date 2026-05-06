@@ -3356,9 +3356,9 @@ function calcConfianza(prob, edge, pBTTS, rL, rV) {
 }
 
 function getStake(confianza, edge) {
-  if (confianza >= 65 && edge >= 5) return 3;
-  if (confianza >= 45 && edge >= 3) return 2;
-  if (confianza >= 25 && edge >= 1) return 1;
+  if (confianza >= 55 && edge >= 3) return 3;
+  if (confianza >= 35 && edge >= 1.5) return 2;
+  if (confianza >= 15 && edge >= 0.5) return 1;
   return 0;
 }
 
@@ -3440,21 +3440,29 @@ function generarAutoPicks() {
   var picks = [];
 
   candidates.forEach(function(c) {
-    if (c.prob < MIN_PROB) return;
-    // Assume fair odds = fq, real bookmaker = fq * (1 - 0.05) margin
-    var bookOdds = c.fq * 0.95; // conservative: assume 5% margin
-    var edge = (bookOdds / c.fq - 1) * 100; // edge vs fair
-    // Better: use actual EV assuming book pays 5% less than fair
-    var actualOdds = c.fq * 0.95;
-    var ev = (c.prob * (actualOdds - 1) - (1 - c.prob)) * 100; // EV%
-    var edgePct = (c.prob - 1/actualOdds) * 100;
-    var confianza = calcConfianza(c.prob, Math.max(0, edgePct), p.pBTTS, rL, rV);
-    var stake = getStake(confianza, Math.max(0, edgePct));
+    if (!c.prob || c.prob < MIN_PROB) return;
+    if (!c.fq || c.fq <= 1.01) return;
+
+    // Stake based purely on probability strength
+    var stake = 0;
+    if (c.prob >= 0.72) stake = 3;
+    else if (c.prob >= 0.62) stake = 2;
+    else if (c.prob >= 0.52) stake = 1;
     if (stake === 0) return;
+
+    // Confidence: probability + form difference
+    var ptsL = (rL||'').split('').reduce(function(s,x){return s+(x==='G'?3:x==='E'?1:0);},0);
+    var ptsV = (rV||'').split('').reduce(function(s,x){return s+(x==='G'?3:x==='E'?1:0);},0);
+    var formBonus = Math.max(0, Math.min(20, (ptsL - ptsV) * 2));
+    var confianza = Math.min(99, Math.round(c.prob * 80 + formBonus));
+
+    // Min odds to have value (fair odds + 3% margin)
+    var minOdds = parseFloat((c.fq * 1.03).toFixed(2));
+
     picks.push({
       mkt: c.mkt, prob: c.prob, fq: c.fq,
-      actualOdds: actualOdds, ev: ev, edgePct: edgePct,
-      confianza: confianza, stake: stake, reason: c.reason
+      minOdds: minOdds, confianza: confianza,
+      stake: stake, reason: c.reason
     });
   });
 
@@ -3463,10 +3471,15 @@ function generarAutoPicks() {
   picks = picks.slice(0,6);
 
   if (!picks.length) {
+    // Show debug info to understand why no picks
+    var debugInfo = candidates.filter(function(c){ return c.prob >= 0.50; }).map(function(c){
+      return c.mkt+': prob='+(c.prob*100).toFixed(0)+'% CJ='+c.fq.toFixed(2)+
+             (c.prob>=0.52?' → STAKE '+(c.prob>=0.72?3:c.prob>=0.62?2:1):'');
+    }).join('<br>');
     document.getElementById('auto-picks-list').innerHTML =
-      '<div style="text-align:center;color:var(--muted);font-size:11px;padding:16px">'+
-      'No hay picks con confianza suficiente para este partido.<br>'+
-      '<span style="font-size:10px;color:#444">Prueba con un partido de más diferencia de calidad.</span></div>';
+      '<div style="text-align:center;color:var(--muted);font-size:11px;padding:12px">'+
+      'No hay picks con confianza suficiente.<br>'+
+      '<div style="text-align:left;font-size:9px;color:#444;margin-top:8px;line-height:1.8">'+debugInfo+'</div></div>';
     return;
   }
 
@@ -3490,7 +3503,7 @@ function generarAutoPicks() {
       '<div class="pick-odds">'+
         '<span style="background:var(--card2);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:800;color:var(--amarillo)">CJ: '+pick.fq.toFixed(2)+'</span>'+
         '<span style="background:var(--card2);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--muted)">Prob: '+(pick.prob*100).toFixed(0)+'%</span>'+
-        '<span class="pick-ev '+(pick.ev>0?'pos':'neg')+'">EV: '+(pick.ev>=0?'+':'')+pick.ev.toFixed(1)+'%</span>'+
+        '<span style="background:#052e16;color:#4ade80;border:1px solid #166534;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700">Apuesta si cuota &gt; '+pick.minOdds+'</span>'+
       '</div>'+
       '<div style="padding:0 12px 6px">'+
         '<div style="height:4px;background:#111;border-radius:2px;overflow:hidden">'+
