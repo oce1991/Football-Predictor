@@ -680,7 +680,32 @@ body.light-mode .card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
       <div id="cmp-result"></div>
     </div>
     <div class="tp" id="tp-save">
-      <div class="card"><div class="ch ch-g">💾 Guardar apuesta</div><div class="cb">
+
+      <!-- AUTO PICKS -->
+      <div class="card" style="margin-bottom:8px">
+        <div class="ch ch-g" style="display:flex;justify-content:space-between;align-items:center">
+          <span>🤖 Picks Automáticos</span>
+          <button onclick="generarAutoPicks()"
+            style="background:var(--amarillo);color:#0d3b20;border:none;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:800;cursor:pointer">
+            ⚡ GENERAR
+          </button>
+        </div>
+        <div class="cb">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.6">
+            El modelo selecciona los mejores picks con stake automático:<br>
+            <span style="color:#4ade80;font-weight:700">★★★ Stake 3 (30€)</span> — Confianza alta<br>
+            <span style="color:#fbbf24;font-weight:700">★★ Stake 2 (20€)</span> — Confianza media<br>
+            <span style="color:#60a5fa;font-weight:700">★ Stake 1 (10€)</span> — Confianza básica
+          </div>
+          <div id="auto-picks-list">
+            <div style="text-align:center;color:var(--muted);font-size:11px;padding:12px">
+              Predice un partido y pulsa ⚡ GENERAR para ver los picks automáticos.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card"><div class="ch ch-g">💾 Guardar apuesta manual</div><div class="cb">
         <div style="margin-bottom:10px"><label>Mercado</label>
           <select id="sv-mkt" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:10px;font-size:14px;width:100%">
             <option>Más 2.5 goles</option><option>Menos 2.5 goles</option>
