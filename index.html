@@ -353,6 +353,31 @@ body.light-mode .card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
 #onesignal-bell-container, #onesignal-slidedown-container,
 .onesignal-bell-launcher, .onesignal-slidedown-dialog { display:none !important; }
 
+
+/* Auto-picks */
+.pick-card{background:var(--card);border-radius:12px;margin-bottom:8px;overflow:hidden;border:1px solid var(--borde)}
+.pick-card.s3{border-color:#4ade80;background:linear-gradient(135deg,#030e06,#050f08)}
+.pick-card.s2{border-color:#fbbf24;background:linear-gradient(135deg,#100e00,#120f00)}
+.pick-card.s1{border-color:#60a5fa;background:linear-gradient(135deg,#080f1e,#090f1a)}
+.pick-hdr{padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
+.pick-stake{font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
+.s3 .pick-stake{background:#4ade80;color:#030e06}
+.s2 .pick-stake{background:#fbbf24;color:#100e00}
+.s1 .pick-stake{background:#60a5fa;color:#080f1e}
+.pick-match{padding:0 12px 5px;font-size:13px;font-weight:700;color:var(--texto)}
+.pick-mkt{padding:0 12px 5px;font-size:11px;color:var(--muted)}
+.pick-odds{padding:0 12px 8px;display:flex;gap:8px;align-items:center}
+.pick-ev{font-size:11px;font-weight:700}
+.pick-ev.pos{color:#4ade80}.pick-ev.neg{color:#f87171}
+.pick-reason{padding:0 12px 9px;font-size:10px;color:#555;line-height:1.5}
+.pick-actions{display:flex;gap:6px;padding:0 12px 10px}
+.pick-btn{flex:1;border:none;border-radius:7px;padding:8px;font-size:11px;font-weight:700;cursor:pointer}
+.pick-save{background:var(--verde3);color:#fff}
+.pick-skip{background:var(--card2);color:var(--muted)}
+.auto-picks-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.confidence-bar{height:4px;border-radius:2px;margin-top:4px;overflow:hidden;background:#111}
+.confidence-fill{height:100%;border-radius:2px}
+
 .err{background:#2d1010;border:1px solid #5c2020;border-radius:10px;padding:11px;color:#f87171;font-size:12px;text-align:center;display:none;margin-bottom:8px}
 .err.show{display:block}
 </style>
@@ -3279,6 +3304,245 @@ guardarApuesta = function() {
     }, 500);
   }
 };
+
+
+// ── AUTO-PICKS ENGINE ─────────────────────────────────────────────────────────
+var STAKE_UNIT = 10; // 1 unit = 10€
+
+function calcConfianza(prob, edge, pBTTS, rL, rV) {
+  // Composite confidence score 0-100
+  var score = 0;
+
+  // Edge contribution (0-40 points)
+  score += Math.min(40, edge * 4);
+
+  // Probability contribution (0-30 points)
+  if (prob > 0.70) score += 30;
+  else if (prob > 0.60) score += 20;
+  else if (prob > 0.55) score += 12;
+  else if (prob > 0.50) score += 5;
+
+  // Form contribution (0-20 points)
+  var ptsL = (rL||'').split('').reduce(function(s,c){return s+(c==='G'?3:c==='E'?1:0);},0);
+  var ptsV = (rV||'').split('').reduce(function(s,c){return s+(c==='G'?3:c==='E'?1:0);},0);
+  score += Math.min(20, Math.max(0, (ptsL - ptsV) * 2));
+
+  return Math.min(100, Math.round(score));
+}
+
+function getStake(confianza, edge) {
+  if (confianza >= 65 && edge >= 5) return 3;
+  if (confianza >= 45 && edge >= 3) return 2;
+  if (confianza >= 25 && edge >= 1) return 1;
+  return 0;
+}
+
+function generarAutoPicks() {
+  if (!curMatch) {
+    document.getElementById('auto-picks-list').innerHTML =
+      '<div style="text-align:center;color:#f87171;font-size:11px;padding:12px">Primero predice un partido.</div>';
+    return;
+  }
+
+  var m = curMatch, p = m.prob;
+  var sH = m.sH, sA = m.sA;
+  var rL = (DATA.racha && DATA.racha[m.local]) || '';
+  var rV = (DATA.racha && DATA.racha[m.visit]) || '';
+  var gpL = (DATA.gp && DATA.gp[m.local]) || {};
+  var gpV = (DATA.gp && DATA.gp[m.visit]) || {};
+
+  // Corner NB probabilities
+  var nbC95  = nbOverUnder(m.totC, R_CORNERS*0.5, 9.5);
+  var nbC105 = nbOverUnder(m.totC, R_CORNERS*0.5, 10.5);
+  var nbY35  = nbOverUnder(m.totY||0, 15, 3.5);
+  var nbY45  = nbOverUnder(m.totY||0, 15, 4.5);
+
+  // Build candidate picks
+  var candidates = [
+    // 1X2
+    { mkt:'1 (Victoria local)', prob:p.p1, fq:1/p.p1,
+      reason:'λ local '+m.lH.toFixed(2)+' vs '+m.lA.toFixed(2)+
+             ' · Prob '+( p.p1*100).toFixed(0)+'%' },
+    { mkt:'X (Empate)', prob:p.px, fq:1/p.px,
+      reason:'Partido igualado · λ diff '+(Math.abs(m.lH-m.lA)).toFixed(2) },
+    { mkt:'2 (Victoria visitante)', prob:p.p2, fq:1/p.p2,
+      reason:'λ visit. '+m.lA.toFixed(2)+' · Prob '+(p.p2*100).toFixed(0)+'%' },
+    // Goals
+    { mkt:'Más 1.5 goles', prob:p.pO15, fq:1/p.pO15,
+      reason:'λ total '+(m.lH+m.lA).toFixed(2)+' goles esperados' },
+    { mkt:'Más 2.5 goles', prob:p.pO25, fq:1/p.pO25,
+      reason:'λ total '+(m.lH+m.lA).toFixed(2)+' · Over 2.5: '+(p.pO25*100).toFixed(0)+'%' },
+    { mkt:'Menos 2.5 goles', prob:p.pU25, fq:1/p.pU25,
+      reason:'λ bajo · Under 2.5: '+(p.pU25*100).toFixed(0)+'%' },
+    { mkt:'Más 3.5 goles', prob:p.pO35, fq:1/p.pO35,
+      reason:'Partido abierto · '+(p.pO35*100).toFixed(0)+'% de 4+ goles' },
+    // BTTS
+    { mkt:'Ambos marcan Sí', prob:p.pBTTS, fq:1/p.pBTTS,
+      reason:'λ local '+m.lH.toFixed(2)+' λ visit. '+m.lA.toFixed(2) },
+    { mkt:'Ambos marcan No', prob:p.pNoBTTS, fq:1/p.pNoBTTS,
+      reason:'Prob clean sheet combinada: '+(p.pNoBTTS*100).toFixed(0)+'%' },
+    // Individual goals
+    { mkt:'Local marca (O0.5)', prob:p.pHO05||0, fq:1/Math.max(0.01,p.pHO05||0),
+      reason:m.local+' marca en casa el '+(( gpL.cs_h!==undefined?(1-gpL.fts_h)*100:0)).toFixed(0)+'% de partidos' },
+    { mkt:'Visitante marca (O0.5)', prob:p.pAO05||0, fq:1/Math.max(0.01,p.pAO05||0),
+      reason:m.visit+' no marca fuera el '+((gpV.fts_a||0)*100).toFixed(0)+'% de partidos' },
+    // Corners NB
+    { mkt:'Más 9.5 corners', prob:nbC95.over, fq:1/Math.max(0.01,nbC95.over),
+      reason:'Corners esperados: '+m.totC.toFixed(1)+' · Modelo NB calibrado' },
+    { mkt:'Menos 9.5 corners', prob:nbC95.under, fq:1/Math.max(0.01,nbC95.under),
+      reason:'Corners esperados bajos: '+m.totC.toFixed(1) },
+    { mkt:'Más 10.5 corners', prob:nbC105.over, fq:1/Math.max(0.01,nbC105.over),
+      reason:'Corners esperados: '+m.totC.toFixed(1)+' · NB modelo' },
+    // Cards NB
+    { mkt:'Más 3.5 tarjetas', prob:nbY35.over, fq:1/Math.max(0.01,nbY35.over),
+      reason:'Tarjetas esperadas: '+(m.totY||0).toFixed(1)+' · NB calibrado' },
+    { mkt:'Menos 3.5 tarjetas', prob:nbY35.under, fq:1/Math.max(0.01,nbY35.under),
+      reason:'Partido tranquilo esperado · '+(nbY35.under*100).toFixed(0)+'% Under' },
+    // HT
+    { mkt:'Local gana al descanso', prob:0, fq:0, isHT:true,
+      reason:'Factor HT liga: '+((getHTFactor(m.liga)*100).toFixed(0))+'% de goles en 1ª parte' },
+  ];
+
+  // Calculate HT prob
+  var htF = getHTFactor(m.liga);
+  var htMat = buildDCMatrix(m.lH*htF, m.lA*htF, RHO, 5);
+  var htP   = analyzeDC(htMat, 5);
+  candidates[candidates.length-1].prob = htP.p1;
+  candidates[candidates.length-1].fq   = htP.p1 > 0.01 ? 1/htP.p1 : 99;
+
+  // Filter: minimum probability threshold
+  var MIN_PROB = 0.50;
+  var picks = [];
+
+  candidates.forEach(function(c) {
+    if (c.prob < MIN_PROB) return;
+    // Assume fair odds = fq, real bookmaker = fq * (1 - 0.05) margin
+    var bookOdds = c.fq * 0.95; // conservative: assume 5% margin
+    var edge = (bookOdds / c.fq - 1) * 100; // edge vs fair
+    // Better: use actual EV assuming book pays 5% less than fair
+    var actualOdds = c.fq * 0.95;
+    var ev = (c.prob * (actualOdds - 1) - (1 - c.prob)) * 100; // EV%
+    var edgePct = (c.prob - 1/actualOdds) * 100;
+    var confianza = calcConfianza(c.prob, Math.max(0, edgePct), p.pBTTS, rL, rV);
+    var stake = getStake(confianza, Math.max(0, edgePct));
+    if (stake === 0) return;
+    picks.push({
+      mkt: c.mkt, prob: c.prob, fq: c.fq,
+      actualOdds: actualOdds, ev: ev, edgePct: edgePct,
+      confianza: confianza, stake: stake, reason: c.reason
+    });
+  });
+
+  // Sort by confianza desc, limit to top 6
+  picks.sort(function(a,b){ return b.confianza - a.confianza; });
+  picks = picks.slice(0,6);
+
+  if (!picks.length) {
+    document.getElementById('auto-picks-list').innerHTML =
+      '<div style="text-align:center;color:var(--muted);font-size:11px;padding:16px">'+
+      'No hay picks con confianza suficiente para este partido.<br>'+
+      '<span style="font-size:10px;color:#444">Prueba con un partido de más diferencia de calidad.</span></div>';
+    return;
+  }
+
+  var html2 = '<div style="font-size:10px;color:var(--muted);margin-bottom:8px">'+
+    picks.length+' picks seleccionados · '+m.local+' vs '+m.visit+'</div>';
+
+  picks.forEach(function(pick, i) {
+    var sClass = 's'+pick.stake;
+    var stars  = pick.stake===3?'★★★':pick.stake===2?'★★':'★';
+    var stakeEur = pick.stake * STAKE_UNIT;
+    var confColor = pick.confianza>=65?'#4ade80':pick.confianza>=45?'#fbbf24':'#60a5fa';
+    var evColor   = pick.ev > 0 ? '#4ade80' : '#f87171';
+
+    html2 += '<div class="pick-card '+sClass+'" id="pick-'+i+'">'+
+      '<div class="pick-hdr">'+
+        '<span style="font-size:11px;color:'+confColor+';font-weight:700">'+stars+' Confianza: '+pick.confianza+'%</span>'+
+        '<span class="pick-stake '+sClass+'">Stake '+pick.stake+' · '+stakeEur+'€</span>'+
+      '</div>'+
+      '<div class="pick-match">'+m.local+' vs '+m.visit+'</div>'+
+      '<div class="pick-mkt">📌 '+pick.mkt+'</div>'+
+      '<div class="pick-odds">'+
+        '<span style="background:var(--card2);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:800;color:var(--amarillo)">CJ: '+pick.fq.toFixed(2)+'</span>'+
+        '<span style="background:var(--card2);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--muted)">Prob: '+(pick.prob*100).toFixed(0)+'%</span>'+
+        '<span class="pick-ev '+(pick.ev>0?'pos':'neg')+'">EV: '+(pick.ev>=0?'+':'')+pick.ev.toFixed(1)+'%</span>'+
+      '</div>'+
+      '<div style="padding:0 12px 6px">'+
+        '<div style="height:4px;background:#111;border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+pick.confianza+'%;background:linear-gradient(90deg,'+confColor+'44,'+confColor+');border-radius:2px"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="pick-reason">'+pick.reason+'</div>'+
+      '<div class="pick-actions">'+
+        '<button class="pick-btn pick-save" onclick="guardarAutoPick('+i+')">💾 Guardar pick</button>'+
+        '<button class="pick-btn pick-skip" onclick="saltarPick('+i+')">✗ Saltar</button>'+
+      '</div>'+
+    '</div>';
+  });
+
+  html2 += '<button onclick="guardarTodosLosAutoPicks()" '+
+    'style="width:100%;background:linear-gradient(135deg,var(--verde3),var(--verde2));color:#fff;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-top:4px">'+
+    '💾 Guardar todos los picks</button>';
+
+  document.getElementById('auto-picks-list').innerHTML = html2;
+  window._autoPicks = picks;
+}
+
+function guardarAutoPick(i) {
+  var pick = window._autoPicks && window._autoPicks[i];
+  if (!pick || !curMatch) return;
+  var hist = lh();
+  hist.unshift({
+    id: Date.now() + i,
+    fecha: new Date().toLocaleDateString('es-ES'),
+    partido: curMatch.local + ' vs ' + curMatch.visit,
+    liga: curMatch.liga,
+    mkt: pick.mkt,
+    cuota: parseFloat(pick.fq.toFixed(2)),
+    stake: pick.stake * STAKE_UNIT,
+    res: 'pendiente',
+    ben: 0,
+    lH: +curMatch.lH.toFixed(2),
+    lA: +curMatch.lA.toFixed(2),
+    evEst: parseFloat((pick.ev * pick.stake * STAKE_UNIT / 100).toFixed(2)),
+    confianza: pick.confianza,
+    autopick: true,
+  });
+  sh(hist);
+  // Visual feedback
+  var card = document.getElementById('pick-'+i);
+  if (card) {
+    card.style.opacity = '0.4';
+    card.querySelector('.pick-save').textContent = '✅ Guardado';
+    card.querySelector('.pick-save').disabled = true;
+  }
+  // Show toast
+  showToast('✅ Pick guardado: ' + pick.mkt);
+}
+
+function saltarPick(i) {
+  var card = document.getElementById('pick-'+i);
+  if (card) card.style.display = 'none';
+}
+
+function guardarTodosLosAutoPicks() {
+  var picks = window._autoPicks;
+  if (!picks || !picks.length) return;
+  picks.forEach(function(_, i) { guardarAutoPick(i); });
+  showToast('✅ ' + picks.length + ' picks guardados');
+  setTimeout(function(){ goPage('history'); renderHist(); }, 800);
+}
+
+function showToast(msg) {
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:75px;left:50%;transform:translateX(-50%);'+
+    'background:#166534;color:#4ade80;padding:8px 18px;border-radius:20px;'+
+    'font-size:12px;font-weight:700;z-index:99999;border:1px solid #4ade80;'+
+    'box-shadow:0 4px 12px rgba(0,0,0,.5)';
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 2500);
+}
 
 </script>
 </div>
