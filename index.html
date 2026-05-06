@@ -698,6 +698,16 @@ body.light-mode .card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
           </button>
         </div>
         <button class="btn" onclick="exportarCSV()" style="background:#1a4731;color:#4ade80;margin-top:6px">📥 Exportar historial CSV</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          <button onclick="backupHistorial()" 
+            style="background:#0d2040;color:#60a5fa;border:1px solid #1d4ed8;border-radius:8px;padding:9px;font-size:11px;font-weight:600;cursor:pointer">
+            💾 Backup JSON
+          </button>
+          <label style="background:#0d2040;color:#60a5fa;border:1px solid #1d4ed8;border-radius:8px;padding:9px;font-size:11px;font-weight:600;cursor:pointer;text-align:center;margin:0">
+            📂 Restaurar
+            <input type="file" accept=".json" onchange="restaurarHistorial(event)" style="display:none">
+          </label>
+        </div>
         <button class="btn" onclick="runMonteCarlo()" style="background:#1a1a3e;color:#a78bfa;margin-top:6px">🎲 Simulación Monte Carlo (10k)</button>
         <div id="mc-result" style="margin-top:8px"></div>
       </div></div>
@@ -3191,6 +3201,84 @@ function checkValueMatchesForNotification() {
 setInterval(checkValueMatchesForNotification, 30*60*1000);
 // Also check on load after 5 seconds
 setTimeout(checkValueMatchesForNotification, 5000);
+
+
+// ── BACKUP & RESTORE HISTORIAL ────────────────────────────────────────────────
+function backupHistorial() {
+  var hist = lh();
+  if (!hist.length) { alert('No hay apuestas para hacer backup.'); return; }
+  var backup = {
+    version: '1.0',
+    fecha: new Date().toISOString().slice(0,10),
+    apuestas: hist
+  };
+  var blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href   = url;
+  a.download = 'historial_backup_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  alert('✅ Backup guardado. Guárdalo en un lugar seguro para no perder tu historial.');
+}
+
+function restaurarHistorial(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      var apuestas = data.apuestas || data; // support both formats
+      if (!Array.isArray(apuestas)) throw new Error('Formato inválido');
+      
+      var current = lh();
+      if (current.length > 0) {
+        var merge = confirm(
+          'Ya tienes ' + current.length + ' apuestas guardadas.\n\n' +
+          '¿Quieres FUSIONAR con las ' + apuestas.length + ' del backup?\n\n' +
+          'OK = Fusionar (sin duplicados)\n' +
+          'Cancelar = Reemplazar todo'
+        );
+        if (merge) {
+          // Merge avoiding duplicates by id
+          var existingIds = new Set(current.map(function(a){ return a.id; }));
+          var newOnes = apuestas.filter(function(a){ return !existingIds.has(a.id); });
+          var merged = current.concat(newOnes).sort(function(a,b){ return b.id - a.id; });
+          sh(merged);
+          alert('✅ Fusionados: ' + newOnes.length + ' apuestas nuevas añadidas.');
+        } else {
+          sh(apuestas);
+          alert('✅ Historial restaurado: ' + apuestas.length + ' apuestas.');
+        }
+      } else {
+        sh(apuestas);
+        alert('✅ Historial restaurado: ' + apuestas.length + ' apuestas.');
+      }
+      renderHist();
+      goPage('history');
+    } catch(err) {
+      alert('❌ Error al restaurar: ' + err.message + '\nAsegúrate de seleccionar un archivo de backup válido.');
+    }
+  };
+  reader.readAsText(file);
+  // Reset input
+  event.target.value = '';
+}
+
+// Auto-backup reminder: every 10 bets saved, remind to backup
+var _guardarOrigBackup = guardarApuesta;
+guardarApuesta = function() {
+  _guardarOrigBackup();
+  var hist = lh();
+  if (hist.length > 0 && hist.length % 10 === 0) {
+    setTimeout(function() {
+      if (confirm('💾 Llevas ' + hist.length + ' apuestas guardadas.\n¿Quieres hacer un backup ahora?')) {
+        backupHistorial();
+      }
+    }, 500);
+  }
+};
 
 </script>
 </div>
