@@ -257,16 +257,18 @@ body{padding-bottom:70px}
   left:0 !important;
   right:0 !important;
   width:100% !important;
-  background:var(--card) !important;
-  border-top:2px solid var(--verde3) !important;
+  background:#131313 !important;
+  border-top:2px solid #27ae60 !important;
   display:flex !important;
   z-index:99999 !important;
-  height:58px;
-  box-shadow:0 -2px 10px rgba(0,0,0,.4);
+  height:58px !important;
+  box-shadow:0 -4px 16px rgba(0,0,0,.6) !important;
+  visibility:visible !important;
+  opacity:1 !important;
 }
-.nb{flex:1;padding:6px 2px 4px;text-align:center;cursor:pointer;border:none;background:none;color:var(--muted);font-size:9px;font-weight:600;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;justify-content:center}
-.nb .ni{font-size:22px;line-height:1.2}
-.nb.on{color:var(--verde3)}
+.nb{flex:1;padding:6px 2px 4px;text-align:center;cursor:pointer;border:none;background:none;color:#888;font-size:9px;font-weight:600;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;justify-content:center;visibility:visible !important;opacity:1 !important}
+.nb .ni{font-size:24px;line-height:1.2;display:block}
+.nb.on{color:#27ae60 !important}
 /* ── PAGES ── */
 .pg{display:none}.pg.on{display:block}
 /* ── TODAY ── */
@@ -312,7 +314,7 @@ body.light-mode .ch.chg { background: var(--verde); }
 body.light-mode select, body.light-mode input {
   background: var(--card2); color: var(--texto); border-color: var(--borde);
 }
-body.light-mode .bnav { background:#fff; border-top:2px solid #ccc; box-shadow:0 -2px 8px rgba(0,0,0,.1); }
+body.light-mode .bnav { background:#fff !important; border-top:2px solid #ccc !important; }
 body.light-mode .nb { color:#555; }
 body.light-mode .nb.on { color:var(--verde3); }
 body.light-mode .tab { background:#e8e8e8; color:#444; border-color:#ccc; }
@@ -942,7 +944,7 @@ body.light-mode .card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
 </div>
 
 <!-- PAGE: HISTORIAL -->
-<div class="pg" id="page-history">
+<div class="pg" id="page-history" style="min-height:100vh">
 <div style="max-width:600px;margin:0 auto;padding:0 10px">
   <div class="card">
     <div class="ch ch-g" style="cursor:pointer" onclick="toggleHist()">
@@ -962,7 +964,7 @@ body.light-mode .card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
       <div style="padding:0 12px 8px" id="bchart"></div>
       <!-- Stats por mercado -->
       <div id="mkt-stats" style="padding:0 12px 8px"></div>
-      <div style="padding:0 12px 12px" id="lista-apuestas"></div>
+      <div style="padding:0 12px 12px" id="lista-apuestas" style="padding-bottom:20px"></div>
     </div>
   </div>
 </div>
@@ -4292,6 +4294,35 @@ goTab = function(n) {
     }, 50);
   }
 };
+
+
+// Force nav visibility on every page change
+var _goPageNav = goPage;
+goPage = function(page) {
+  _goPageNav(page);
+  setTimeout(function() {
+    var nav = document.querySelector('.bnav');
+    if (nav) {
+      nav.style.display = 'flex';
+      nav.style.visibility = 'visible';
+      nav.style.opacity = '1';
+      nav.style.zIndex = '99999';
+      nav.style.position = 'fixed';
+      nav.style.bottom = '0';
+      nav.style.left = '0';
+      nav.style.right = '0';
+    }
+  }, 50);
+};
+// Also force on load
+window.addEventListener('DOMContentLoaded', function() {
+  setTimeout(function() {
+    var nav = document.querySelector('.bnav');
+    if (nav) {
+      nav.style.cssText += ';display:flex!important;visibility:visible!important;opacity:1!important;z-index:99999!important;position:fixed!important;bottom:0!important;left:0!important;right:0!important;height:58px!important;background:#131313!important;border-top:2px solid #27ae60!important';
+    }
+  }, 300);
+});
 
 </script>
 </div>
