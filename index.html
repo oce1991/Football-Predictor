@@ -1051,23 +1051,7 @@ window.addEventListener('DOMContentLoaded', function() {
     });
     renderStandings(DATA.ligas[0]);
   }
-  // Today filter
-  var todayFilter = document.getElementById('today-filter');
-  var selectedLigas = new Set(['Premier League','La Liga','Bundesliga','Serie A','Ligue 1']);
-  if (todayFilter) {
-    DATA.ligas.forEach(function(liga) {
-      var btn = document.createElement('button');
-      btn.className = 'lfbtn' + (selectedLigas.has(liga)?' on':'');
-      btn.textContent = liga;
-      btn.onclick = function() {
-        btn.classList.toggle('on');
-        if (selectedLigas.has(liga)) selectedLigas.delete(liga);
-        else selectedLigas.add(liga);
-      };
-      todayFilter.appendChild(btn);
-    });
-  }
-  window._selectedLigas = selectedLigas;
+  // today-filter populated in initToday below
   // Pre-fill today API key input
   var todayKeyEl = document.getElementById('today-apikey');
   if (todayKeyEl) {
