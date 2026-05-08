@@ -3073,23 +3073,61 @@ function findMyTeam(name){
 
 async function loadTodayMatches(){
   var list=document.getElementById('today-list');
-  list.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">⏳ Cargando...</div>';
+  list.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">⏳ Buscando partidos de hoy...</div>';
   var selectedLigas=window._selectedLigas||new Set(DATA.ligas);
   var apiKey=getApiKey();
   var apiGames=[];
+
+  if(!apiKey||apiKey.length<10){
+    renderTodayMatches([],selectedLigas);
+    return;
+  }
+
+  var sks=[...new Set([...selectedLigas].map(function(l){return SPORT_KEYS_MAP[l];}).filter(Boolean))].slice(0,6);
+  var today=new Date().toISOString().slice(0,10);
+
+  // Helper: fetch with timeout
+  function fetchWithTimeout(url, ms) {
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function(){ controller.abort(); }, ms) : null;
+    var opts = controller ? {signal: controller.signal} : {};
+    return fetch(url, opts).finally(function(){ if(timer) clearTimeout(timer); });
+  }
+
+  // Fetch ALL leagues in parallel (much faster than sequential)
+  list.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">⏳ Consultando '+sks.length+' ligas en paralelo...</div>';
+
+  var promises = sks.map(function(sk){
+    var url='https://api.the-odds-api.com/v4/sports/'+sk+'/odds/?apiKey='+apiKey+'&regions=eu&markets=h2h&oddsFormat=decimal';
+    return fetchWithTimeout(url, 8000)
+      .then(function(res){ return res.ok ? res.json() : []; })
+      .then(function(games){
+        return games.filter(function(g){ return g.commence_time && g.commence_time.startsWith(today); });
+      })
+      .catch(function(){ return []; }); // silently skip failed leagues
+  });
+
+  try {
+    var results = await Promise.all(promises);
+    results.forEach(function(games){ games.forEach(function(g){ apiGames.push(g); }); });
+  } catch(e) {
+    apiGames = [];
+  }
+
   if(apiKey&&apiKey.length>10){
-    var sks=[...new Set([...selectedLigas].map(function(l){return SPORT_KEYS_MAP[l];}).filter(Boolean))];
+    // legacy code path no longer needed - kept for structure
+    var sks2=sks; // already processed above
     try{
-      for(var i=0;i<Math.min(sks.length,6);i++){
-        var url='https://api.the-odds-api.com/v4/sports/'+sks[i]+'/odds/?apiKey='+apiKey+'&regions=eu&markets=h2h&oddsFormat=decimal';
+      for(var i=0;i<0;i++){ // skip - already done in parallel
+        var url='https://api.the-odds-api.com/v4/sports/'+sks2[i]+'/odds/?apiKey='+apiKey+'&regions=eu&markets=h2h&oddsFormat=decimal';
         var res=await fetch(url);
         if(!res.ok)continue;
         var games=await res.json();
-        var today=new Date().toISOString().slice(0,10);
-        games.filter(function(g){return g.commence_time&&g.commence_time.startsWith(today);})
+        var today2=new Date().toISOString().slice(0,10);
+        games.filter(function(g){return g.commence_time&&g.commence_time.startsWith(today2);})
              .forEach(function(g){apiGames.push(g);});
       }
-    }catch(e){console.log('API:',e);}
+    }catch(e){}
   }
   renderTodayMatches(apiGames,selectedLigas);
 }
@@ -3121,13 +3159,17 @@ function renderTodayMatches(apiGames,selectedLigas){
     });
   }
   if(!cards.length){
+    var hasKey = !!(getApiKey&&getApiKey()&&getApiKey().length>10);
     list.innerHTML='<div style="background:var(--card);border-radius:12px;padding:18px;border:1px solid var(--borde);text-align:center">'+
-      '<div style="font-size:14px;margin-bottom:10px">📅</div>'+
-      '<div style="font-size:13px;font-weight:700;margin-bottom:8px">Configura tu API key para ver los partidos de hoy</div>'+
-      '<div style="font-size:11px;color:var(--muted);line-height:1.7">1. Ve al <b>Predictor</b><br>'+
-      '2. En el panel morado <b>"Cuotas en vivo"</b>, pega tu API key de <b>the-odds-api.com</b><br>'+
-      '3. Vuelve aquí y pulsa <b>"Cargar partidos"</b><br><br>'+
-      '<span style="color:#444">Con la API key verás todos los partidos de hoy con sus predicciones DC, alertas de valor, racha de forma y cuotas reales.</span></div>'+
+      '<div style="font-size:14px;margin-bottom:8px">📅</div>'+
+      (hasKey ?
+        '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Sin partidos hoy en las ligas seleccionadas</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.7">Puede que no haya partidos hoy, o que los equipos no estén en nuestra base de datos.<br><br>'+
+        '<b>Prueba a seleccionar más ligas</b> o vuelve a intentarlo más tarde.</div>' :
+        '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Configura tu API key</div>'+
+        '<div style="font-size:11px;color:var(--muted);line-height:1.7">Ve al <b>Predictor</b> → panel morado → pega tu API key de <b>the-odds-api.com</b><br>'+
+        'Luego vuelve aquí y pulsa Cargar partidos.</div>'
+      )+
     '</div>';
     return;
   }
