@@ -3101,7 +3101,21 @@ async function loadTodayMatches(){
   var apiKey=getApiKey();
   var apiGames=[];
 
+  // Show immediate status
+  var preDebug = document.getElementById('today-debug');
+  if (!preDebug) {
+    preDebug = document.createElement('div');
+    preDebug.id = 'today-debug';
+    preDebug.style.cssText = 'background:#0a0a0a;border:1px solid #444;border-radius:8px;padding:10px;margin:8px 0;font-size:11px;color:#aaa;font-family:monospace;line-height:1.8';
+    list.before(preDebug);
+  }
+  preDebug.style.display = 'block';
+  preDebug.innerHTML = '🔑 API Key: '+(apiKey&&apiKey.length>5?'✅ ('+apiKey.length+' chars)':'❌ NO KEY')+'<br>'+
+    '📅 Buscando fecha: '+new Date().toISOString().slice(0,10)+'<br>'+
+    '🌍 Ligas seleccionadas: '+([...selectedLigas].join(', ') || 'ninguna')+'<br>';
+
   if(!apiKey||apiKey.length<10){
+    preDebug.innerHTML += '❌ Sin API key válida';
     renderTodayMatches([],selectedLigas);
     return;
   }
@@ -3109,25 +3123,28 @@ async function loadTodayMatches(){
   var sks=[...new Set([...selectedLigas].map(function(l){return SPORT_KEYS_MAP[l];}).filter(Boolean))].slice(0,6);
   var today=new Date().toISOString().slice(0,10);
 
-  // Helper: fetch with timeout
+  // Helper: fetch with timeout using Promise.race
   function fetchWithTimeout(url, ms) {
-    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = controller ? setTimeout(function(){ controller.abort(); }, ms) : null;
-    var opts = controller ? {signal: controller.signal} : {};
-    return fetch(url, opts).finally(function(){ if(timer) clearTimeout(timer); });
+    var timeout = new Promise(function(_, reject) {
+      setTimeout(function(){ reject(new Error('timeout')); }, ms);
+    });
+    return Promise.race([fetch(url), timeout]);
   }
 
   // Fetch ALL leagues in parallel (much faster than sequential)
   list.innerHTML='<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">⏳ Consultando '+sks.length+' ligas en paralelo...</div>';
 
+  var skResults = {};
   var promises = sks.map(function(sk){
     var url='https://api.the-odds-api.com/v4/sports/'+sk+'/odds/?apiKey='+apiKey+'&regions=eu&markets=h2h&oddsFormat=decimal';
     return fetchWithTimeout(url, 8000)
       .then(function(res){ return res.ok ? res.json() : []; })
       .then(function(games){
-        return games.filter(function(g){ return g.commence_time && g.commence_time.startsWith(today); });
+        var todayGames = games.filter(function(g){ return g.commence_time && g.commence_time.startsWith(today); });
+        skResults[sk] = {total: games.length, today: todayGames.length};
+        return todayGames;
       })
-      .catch(function(){ return []; }); // silently skip failed leagues
+      .catch(function(e){ skResults[sk] = {error: e.message||'error'}; return []; });
   });
 
   try {
@@ -3135,6 +3152,30 @@ async function loadTodayMatches(){
     results.forEach(function(games){ games.forEach(function(g){ apiGames.push(g); }); });
   } catch(e) {
     apiGames = [];
+  }
+
+  // Show debug info ALWAYS
+  var debugEl = document.getElementById('today-debug');
+  debugEl = debugEl || document.createElement('div');
+  debugEl.style.cssText = 'display:block;background:#0a0a0a;border:1px solid #333;border-radius:8px;padding:10px;margin:8px 0;font-size:11px;color:#aaa;font-family:monospace;line-height:1.8';
+  if (!debugEl.parentNode) document.getElementById('today-list').before(debugEl);
+  if (true) {
+    var dbg = '<b>API Debug:</b><br>';
+    dbg += 'Fecha buscada: '+today+'<br>';
+    dbg += 'Ligas consultadas: '+sks.length+'<br>';
+    sks.forEach(function(sk){
+      var r = skResults[sk] || {};
+      dbg += (r.error?'❌':r.today>0?'✅':'⚪')+' '+sk+': '+(r.error||r.today+'/'+r.total+' hoy')+'<br>';
+    });
+    dbg += 'Total partidos hoy: '+apiGames.length+'<br>';
+    if(apiGames.length>0){
+      dbg += '<br><b>Partidos encontrados:</b><br>';
+      apiGames.forEach(function(g){
+        var local=findMyTeam(g.home_team), visit=findMyTeam(g.away_team);
+        dbg += (local&&visit?'✅':'❌')+' '+g.home_team+' vs '+g.away_team+'<br>';
+      });
+    }
+    debugEl.innerHTML = dbg;
   }
 
   if(apiKey&&apiKey.length>10){
@@ -3151,6 +3192,22 @@ async function loadTodayMatches(){
              .forEach(function(g){apiGames.push(g);});
       }
     }catch(e){}
+  }
+  // Debug: show API names vs matched names
+  var debugEl = document.getElementById('today-debug');
+  if (debugEl && apiGames.length > 0) {
+    debugEl.style.display = 'block';
+    var debugLines = ['API encontró '+apiGames.length+' partidos hoy:<br>'];
+    apiGames.slice(0,20).forEach(function(g) {
+      var local = findMyTeam(g.home_team);
+      var visit = findMyTeam(g.away_team);
+      var ok = local && visit;
+      debugLines.push(
+        (ok?'✅':'❌')+' '+g.home_team+' vs '+g.away_team+
+        (ok?' → '+local+' vs '+visit:' → NO ENCONTRADO')+'<br>'
+      );
+    });
+    debugEl.innerHTML = debugLines.join('');
   }
   renderTodayMatches(apiGames,selectedLigas);
 }
