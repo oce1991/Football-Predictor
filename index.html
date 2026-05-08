@@ -3798,11 +3798,12 @@ function guardarAutoPick(i) {
   var card = document.getElementById('pick-'+i);
   if (card) {
     card.style.opacity = '0.4';
-    card.querySelector('.pick-save').textContent = '✅ Guardado';
-    card.querySelector('.pick-save').disabled = true;
+    var saveBtn = card.querySelector('.pick-save');
+    if (saveBtn) { saveBtn.textContent = '✅ Guardado'; saveBtn.disabled = true; }
   }
-  // Show toast
   showToast('✅ Pick guardado: ' + pick.mkt);
+  renderHist(); // update history page
+  renderTrackRecord(); // update track record
 }
 
 function saltarPick(i) {
@@ -3813,9 +3814,37 @@ function saltarPick(i) {
 function guardarTodosLosAutoPicks() {
   var picks = window._autoPicks;
   if (!picks || !picks.length) return;
-  picks.forEach(function(_, i) { guardarAutoPick(i); });
+  // Save all at once to avoid multiple renderHist calls
+  var hist = lh();
+  picks.forEach(function(pick, i) {
+    if (!pick || !curMatch) return;
+    hist.unshift({
+      id: Date.now()+i,
+      fecha: new Date().toLocaleDateString('es-ES'),
+      partido: curMatch.local+' vs '+curMatch.visit,
+      liga: curMatch.liga,
+      mkt: pick.mkt,
+      cuota: parseFloat(pick.fq.toFixed(2)),
+      stake: pick.stake * STAKE_UNIT,
+      res: 'pendiente',
+      ben: 0,
+      evEst: null,
+      confianza: pick.confianza,
+      autopick: true,
+    });
+    // Mark as saved visually
+    var card = document.getElementById('pick-'+i);
+    if (card) {
+      card.style.opacity = '0.4';
+      var sb = card.querySelector('.pick-save');
+      if (sb) { sb.textContent='✅ Guardado'; sb.disabled=true; }
+    }
+  });
+  sh(hist);
+  renderHist();
+  renderTrackRecord();
   showToast('✅ ' + picks.length + ' picks guardados');
-  setTimeout(function(){ goPage('history'); renderHist(); }, 800);
+  setTimeout(function(){ goPage('history'); }, 600);
 }
 
 function showToast(msg) {
@@ -4055,6 +4084,7 @@ function guardarPickDia(i) {
   if (btn) { btn.textContent='✅ Guardado'; btn.classList.add('saved'); btn.disabled=true; }
   showToast('✅ Pick guardado');
   renderTrackRecord();
+  renderHist(); // update history page
 }
 
 // ── TRACK RECORD ──────────────────────────────────────────────────────────────
