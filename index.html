@@ -1068,6 +1068,12 @@ window.addEventListener('DOMContentLoaded', function() {
     });
   }
   window._selectedLigas = selectedLigas;
+  // Pre-fill today API key input
+  var todayKeyEl = document.getElementById('today-apikey');
+  if (todayKeyEl) {
+    var savedKey = localStorage.getItem('odds_api_key') || DEFAULT_API_KEY || '';
+    if (savedKey) todayKeyEl.value = savedKey;
+  }
   // Date
   var dateEl = document.getElementById('today-date');
   if (dateEl) dateEl.textContent = new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});
@@ -2424,10 +2430,14 @@ function saveApiKey() {
 }
 
 function getApiKey() {
-  const fromEl = document.getElementById('odds-apikey');
-  const fromInput = fromEl ? fromEl.value.trim() : '';
-  const fromStorage = getApiKey() || '';
-  return fromInput || fromStorage || DEFAULT_API_KEY || '';
+  var fromEl = document.getElementById('odds-apikey');
+  var fromInput = fromEl ? fromEl.value.trim() : '';
+  var fromToday = document.getElementById('today-apikey');
+  var fromTodayVal = fromToday ? fromToday.value.trim() : '';
+  var fromStorage = localStorage.getItem('odds_api_key') || '';
+  var key = fromInput || fromTodayVal || fromStorage || DEFAULT_API_KEY || '';
+  if (key && key.length > 10) localStorage.setItem('odds_api_key', key);
+  return key;
 }
 
 function loadApiKey() {
